@@ -81,7 +81,6 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         # Connection control
         self._connect_enabled: bool = True
         self._rssi: float | None = None
-        self._battery: int | None = None
 
     # ── Setup / Teardown ─────────────────────────────────────────────────────
 
@@ -172,18 +171,6 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
 
             _LOGGER.info("Connected to AiBBQ %s", self._address)
 
-            # Attempt to read standard BLE Battery Service (UUID 0x180F / char 0x2A19).
-            # Silently skip if the device does not expose the service.
-            battery_char = client.services.get_characteristic(
-                "00002a19-0000-1000-8000-00805f9b34fb"
-            )
-            if battery_char is not None:
-                try:
-                    raw = await client.read_gatt_char(battery_char)
-                    self._battery = int(raw[0])
-                except (BleakError, asyncio.TimeoutError):
-                    pass
-
             self.async_set_updated_data(copy.copy(self.data))
 
         except (BleakError, asyncio.TimeoutError) as err:
@@ -222,10 +209,6 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
     @property
     def rssi(self) -> float | None:
         return self._rssi
-
-    @property
-    def battery(self) -> int | None:
-        return self._battery
 
     async def async_set_connect_enabled(self, enabled: bool) -> None:
         """Enable or disable BLE auto-connect and update HA state."""

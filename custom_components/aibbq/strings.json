@@ -36,9 +36,6 @@
     "sensor": {
       "rssi": {
         "name": "Signal Strength"
-      },
-      "battery": {
-        "name": "Battery"
       }
     }
   }

@@ -12,13 +12,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
+from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_BATTERY, SENSOR_RSSI, SENSOR_TEMP_CURRENT
+from .const import DOMAIN, SENSOR_RSSI, SENSOR_TEMP_CURRENT
 from .coordinator import AiBBQCoordinator
 
 
@@ -47,15 +47,6 @@ SENSORS: tuple[AiBBQSensorDescription, ...] = (
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
         entity_registry_enabled_default=False,
         value_fn=lambda c: c.rssi,
-    ),
-    AiBBQSensorDescription(
-        key=SENSOR_BATTERY,
-        translation_key=SENSOR_BATTERY,
-        name="Battery",
-        device_class=SensorDeviceClass.BATTERY,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=PERCENTAGE,
-        value_fn=lambda c: c.battery,
     ),
 )
 
