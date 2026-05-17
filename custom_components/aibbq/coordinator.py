@@ -358,6 +358,12 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         """Decode incoming BLE frame(s) and push updated state to HA."""
         updated = process_notification(bytes(raw), self.data)
         if updated:
+            # Device stops advertising while connected, so refresh RSSI from HA's cache.
+            service_info = bluetooth.async_last_service_info(
+                self.hass, self._address, connectable=True
+            )
+            if service_info is not None:
+                self._rssi = service_info.rssi
             _LOGGER.debug(
                 "Notification: temp=%s °C target=%s",
                 f"{self.data.best_temp:.0f}" if self.data.best_temp is not None else "—",
