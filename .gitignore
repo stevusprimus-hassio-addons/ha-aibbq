@@ -7,11 +7,22 @@ dist/
 build/
 *.egg
 
-# Home Assistant
-config/
+# Home Assistant runtime — keep configuration.yaml, ignore everything else
+config/*.db
+config/*.db-shm
+config/*.db-wal
+config/*.log
+config/*.log.*
+config/.storage/
+config/deps/
+config/tts/
+config/blueprints/
+config/.cache
+config/.ha_run.lock
+config/.HA_VERSION
+
 
 # IDE
-.vscode/
 .idea/
 *.swp
 *.swo
@@ -21,3 +32,5 @@ config/
 
 # Claude Code
 .claude/
+
+.devcontainer-lock.json

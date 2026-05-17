@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Home Assistant",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "homeassistant",
+      "args": ["--debug", "-c", "config"],
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/custom_components"
+      }
+    },
+    {
+      "name": "pytest — all tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-v"],
+      "justMyCode": false
+    },
+    {
+      "name": "pytest — current file",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v"],
+      "justMyCode": false
+    }
+  ]
+}

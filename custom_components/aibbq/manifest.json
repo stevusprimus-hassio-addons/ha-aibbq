@@ -10,6 +10,7 @@
   "codeowners": [],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
+  "requirements": ["bleak-retry-connector>=3.0.0"],
   "documentation": "https://github.com/stevusprimus-hassio-addons/hacs-inkbird-bbq",
   "integration_type": "device",
   "iot_class": "local_push",

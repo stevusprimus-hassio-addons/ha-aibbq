@@ -15,11 +15,13 @@ Manages the active BLE connection lifecycle:
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from typing import TYPE_CHECKING
 
 from bleak import BleakClient
 from bleak.exc import BleakError
+from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
@@ -31,7 +33,7 @@ from homeassistant.components.bluetooth import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import AUTH_CMD, DOMAIN, NOTIFY_HANDLE, WRITE_HANDLE
+from .const import AUTH_CMD, CHAR_NOTIFY_UUID, CHAR_WRITE_UUID, DOMAIN, SERVICE_UUID_1
 from .parser import AiBBQState, process_notification
 
 if TYPE_CHECKING:
@@ -61,11 +63,20 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         self._address: str = entry.unique_id  # BLE MAC / UUID
         self._entry = entry
         self._client: BleakClient | None = None
+        self._write_char = None          # stored after connect for later writes
         self._connect_task: asyncio.Task | None = None
         self._cancel_bluetooth_cb: callable | None = None
 
         # Shared state object mutated in-place by the parser
         self.data = AiBBQState()
+
+        # HA-managed temperature thresholds (not written to device)
+        self._ha_min_temp: float | None = None
+        self._ha_max_temp: float | None = None
+        self._low_alarm_enabled: bool = False
+        self._high_alarm_enabled: bool = False
+        self._low_alarm_triggered: bool = False
+        self._high_alarm_triggered: bool = False
 
     # ── Setup / Teardown ─────────────────────────────────────────────────────
 
@@ -132,18 +143,23 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
 
         _LOGGER.debug("Connecting to %s", self._address)
         try:
-            client = BleakClient(
+            client = await establish_connection(
+                BleakClient,
                 ble_device,
+                self._address,
                 disconnected_callback=self._async_on_disconnect,
             )
-            await client.connect()
             self._client = client
 
-            # Subscribe to the notify characteristic
-            await client.start_notify(NOTIFY_HANDLE, self._async_on_notification)
+            # Device exposes two services with identical characteristic UUIDs;
+            # scope to SERVICE_UUID_1 to get an unambiguous characteristic reference.
+            service = client.services.get_service(SERVICE_UUID_1)
+            notify_char = service.get_characteristic(CHAR_NOTIFY_UUID)
+            write_char = service.get_characteristic(CHAR_WRITE_UUID)
 
-            # Send auth handshake — this triggers the device to start streaming
-            await client.write_gatt_char(WRITE_HANDLE, AUTH_CMD, response=False)
+            await client.start_notify(notify_char, self._async_on_notification)
+            await client.write_gatt_char(write_char, AUTH_CMD, response=False)
+            self._write_char = write_char   # keep for later writes (target temp, etc.)
 
             _LOGGER.info("Connected to AiBBQ %s", self._address)
 
@@ -158,6 +174,7 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         """Handle unexpected disconnection."""
         _LOGGER.warning("Disconnected from AiBBQ %s — will reconnect on next advertisement", self._address)
         self._client = None
+        self._write_char = None
 
     async def _async_disconnect(self) -> None:
         """Disconnect cleanly if connected."""
@@ -168,6 +185,115 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
                 pass
         self._client = None
 
+    # ── Temperature thresholds & alarms ──────────────────────────────────────
+
+    @property
+    def ha_min_temp(self) -> float | None:
+        return self._ha_min_temp
+
+    @property
+    def ha_max_temp(self) -> float | None:
+        return self._ha_max_temp
+
+    @property
+    def low_alarm_enabled(self) -> bool:
+        return self._low_alarm_enabled
+
+    @property
+    def high_alarm_enabled(self) -> bool:
+        return self._high_alarm_enabled
+
+    @property
+    def alarm_low_active(self) -> bool:
+        if not self._low_alarm_enabled or self._ha_min_temp is None or self.data.current_temp is None:
+            return False
+        return self.data.current_temp <= self._ha_min_temp
+
+    @property
+    def alarm_high_active(self) -> bool:
+        if not self._high_alarm_enabled or self._ha_max_temp is None or self.data.current_temp is None:
+            return False
+        return self.data.current_temp >= self._ha_max_temp
+
+    async def async_set_min_temp(self, temp: float) -> None:
+        self._ha_min_temp = temp
+        self._low_alarm_triggered = False
+        self.async_set_updated_data(copy.copy(self.data))
+
+    async def async_set_max_temp(self, temp: float) -> None:
+        self._ha_max_temp = temp
+        self._high_alarm_triggered = False
+        self.async_set_updated_data(copy.copy(self.data))
+
+    def set_low_alarm_enabled(self, enabled: bool) -> None:
+        self._low_alarm_enabled = enabled
+        self._low_alarm_triggered = False
+        self.async_set_updated_data(copy.copy(self.data))
+
+    def set_high_alarm_enabled(self, enabled: bool) -> None:
+        self._high_alarm_enabled = enabled
+        self._high_alarm_triggered = False
+        self.async_set_updated_data(copy.copy(self.data))
+
+    @callback
+    def _check_alarms(self) -> None:
+        temp = self.data.current_temp
+        if temp is None:
+            return
+        if self._low_alarm_enabled and self._ha_min_temp is not None:
+            if not self._low_alarm_triggered and temp <= self._ha_min_temp:
+                self._low_alarm_triggered = True
+                self._fire_alarm(
+                    "low", temp, self._ha_min_temp,
+                    f"Probe dropped to {temp:.0f} °C — below minimum of {self._ha_min_temp:.0f} °C.",
+                    "AiBBQ: Low temperature alarm",
+                    f"{DOMAIN}_alarm_low",
+                )
+            elif self._low_alarm_triggered and temp > self._ha_min_temp + 1:
+                self._low_alarm_triggered = False
+
+        if self._high_alarm_enabled and self._ha_max_temp is not None:
+            if not self._high_alarm_triggered and temp >= self._ha_max_temp:
+                self._high_alarm_triggered = True
+                self._fire_alarm(
+                    "high", temp, self._ha_max_temp,
+                    f"Probe reached {temp:.0f} °C — above maximum of {self._ha_max_temp:.0f} °C.",
+                    "AiBBQ: High temperature alarm",
+                    f"{DOMAIN}_alarm_high",
+                )
+            elif self._high_alarm_triggered and temp < self._ha_max_temp - 1:
+                self._high_alarm_triggered = False
+
+    @callback
+    def _fire_alarm(
+        self,
+        kind: str,
+        temp: float,
+        threshold: float,
+        message: str,
+        title: str,
+        notification_id: str,
+    ) -> None:
+        # Persistent notification — works out of the box, no user config needed
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {"message": message, "title": title, "notification_id": notification_id},
+            )
+        )
+        # HA event — lets automations react with any notifier / logic
+        self.hass.bus.async_fire(
+            f"{DOMAIN}_alarm",
+            {
+                "kind": kind,
+                "current_temp": temp,
+                "threshold": threshold,
+                "device_address": self._address,
+                "message": message,
+            },
+        )
+
     # ── Notification handler ──────────────────────────────────────────────────
 
     @callback
@@ -175,8 +301,13 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         """Decode incoming BLE frame(s) and push updated state to HA."""
         updated = process_notification(bytes(raw), self.data)
         if updated:
+            _LOGGER.debug(
+                "Notification: temp=%s °C target=%s",
+                f"{self.data.best_temp:.0f}" if self.data.best_temp is not None else "—",
+                f"{self.data.target_temp:.0f} °C" if self.data.target_temp is not None else "—",
+            )
+            self._check_alarms()
             # Push a *copy* so entity listeners see a new object reference
-            import copy
             self.async_set_updated_data(copy.copy(self.data))
 
     # ── DataUpdateCoordinator override ────────────────────────────────────────

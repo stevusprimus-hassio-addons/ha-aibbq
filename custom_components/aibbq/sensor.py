@@ -19,7 +19,7 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_TEMP_CURRENT, SENSOR_TEMP_TARGET
+from .const import DOMAIN, SENSOR_TEMP_CURRENT
 from .coordinator import AiBBQCoordinator
 from .parser import AiBBQState
 
@@ -39,20 +39,8 @@ SENSORS: tuple[AiBBQSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        # Prefer hi-res (0.1 °C) when available, fall back to whole-degree reading
-        value_fn=lambda s: s.best_temp,
-    ),
-    AiBBQSensorDescription(
-        key=SENSOR_TEMP_TARGET,
-        name="Target Temperature",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         suggested_display_precision=0,
-        # Only show when a target has been set (not 100 °C default = unset)
-        value_fn=lambda s: s.target_temp,
-        entity_registry_enabled_default=True,
+        value_fn=lambda s: s.best_temp,
     ),
 )
 

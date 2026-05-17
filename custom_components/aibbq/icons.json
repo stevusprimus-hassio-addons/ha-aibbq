@@ -1,0 +1,33 @@
+{
+  "entity": {
+    "sensor": {
+      "temperature_current": {
+        "default": "mdi:thermometer"
+      }
+    },
+    "number": {
+      "min_temperature": {
+        "default": "mdi:thermometer-low"
+      },
+      "max_temperature": {
+        "default": "mdi:thermometer-high"
+      }
+    },
+    "binary_sensor": {
+      "alarm_low": {
+        "default": "mdi:thermometer-alert"
+      },
+      "alarm_high": {
+        "default": "mdi:thermometer-alert"
+      }
+    },
+    "switch": {
+      "alarm_low_enabled": {
+        "default": "mdi:bell-ring-outline"
+      },
+      "alarm_high_enabled": {
+        "default": "mdi:bell-ring-outline"
+      }
+    }
+  }
+}

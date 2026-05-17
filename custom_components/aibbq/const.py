@@ -37,5 +37,11 @@ PROBE_DISCONNECTED = 0xFF
 # ── HA ───────────────────────────────────────────────────────────────────────
 CONF_ADDRESS = "address"
 
-SENSOR_TEMP_CURRENT = "temperature_current"
-SENSOR_TEMP_TARGET  = "temperature_target"
+SENSOR_TEMP_CURRENT    = "temperature_current"
+SENSOR_TEMP_TARGET     = "temperature_target"
+NUMBER_TEMP_MIN        = "min_temperature"
+NUMBER_TEMP_MAX        = "max_temperature"
+BINARY_SENSOR_ALARM_LOW  = "alarm_low"
+BINARY_SENSOR_ALARM_HIGH = "alarm_high"
+SWITCH_ALARM_LOW_ENABLED  = "alarm_low_enabled"
+SWITCH_ALARM_HIGH_ENABLED = "alarm_high_enabled"

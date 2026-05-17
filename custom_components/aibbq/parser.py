@@ -46,8 +46,10 @@ class AiBBQState:
 
     @property
     def best_temp(self) -> float | None:
-        """Return the highest-resolution available temperature."""
-        return self.current_temp_hires if self.current_temp_hires is not None else self.current_temp
+        """Return the best available temperature."""
+        # Prefer 0x10 (1 s) over 0x01 — frame[2] of 0x01 appears stuck at the
+        # handshake value (0xF0 = 24.0 °C) and does not track the live probe temp.
+        return self.current_temp if self.current_temp is not None else self.current_temp_hires
 
 
 def split_frames(data: bytes) -> list[bytes]:

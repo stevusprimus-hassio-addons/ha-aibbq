@@ -1,0 +1,9 @@
+colorlog==6.10.1
+homeassistant==2026.4.1
+asyncua==1.2b2
+pip>=21.3.1
+ruff==0.15.7
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-homeassistant-custom-component>=0.13.0
+bleak-retry-connector>=3.0.0
