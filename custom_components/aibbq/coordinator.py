@@ -116,6 +116,8 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         change: BluetoothChange,
     ) -> None:
         """Called by HA every time the device advertises."""
+        self._rssi = service_info.rssi
+        self.async_set_updated_data(copy.copy(self.data))
         if change == BluetoothChange.ADVERTISEMENT and not self._is_connected:
             _LOGGER.debug("Advertisement from %s — scheduling connect", self._address)
             self._schedule_connect()
@@ -128,6 +130,8 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
 
     def _schedule_connect(self) -> None:
         """Schedule a connection attempt unless one is already running."""
+        if not self._connect_enabled:
+            return
         if self._connect_task and not self._connect_task.done():
             return
         self._connect_task = self.hass.async_create_task(
@@ -168,6 +172,20 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
 
             _LOGGER.info("Connected to AiBBQ %s", self._address)
 
+            # Attempt to read standard BLE Battery Service (UUID 0x180F / char 0x2A19).
+            # Silently skip if the device does not expose the service.
+            battery_char = client.services.get_characteristic(
+                "00002a19-0000-1000-8000-00805f9b34fb"
+            )
+            if battery_char is not None:
+                try:
+                    raw = await client.read_gatt_char(battery_char)
+                    self._battery = int(raw[0])
+                except BleakError:
+                    pass
+
+            self.async_set_updated_data(copy.copy(self.data))
+
         except (BleakError, asyncio.TimeoutError) as err:
             _LOGGER.warning("Failed to connect to %s: %s — retrying in %ds", self._address, err, _RECONNECT_DELAY)
             self._client = None
@@ -180,6 +198,7 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         _LOGGER.warning("Disconnected from AiBBQ %s — will reconnect on next advertisement", self._address)
         self._client = None
         self._write_char = None
+        self.async_set_updated_data(copy.copy(self.data))
 
     async def _async_disconnect(self) -> None:
         """Disconnect cleanly if connected."""
