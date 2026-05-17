@@ -181,7 +181,7 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
                 try:
                     raw = await client.read_gatt_char(battery_char)
                     self._battery = int(raw[0])
-                except BleakError:
+                except (BleakError, asyncio.TimeoutError):
                     pass
 
             self.async_set_updated_data(copy.copy(self.data))
