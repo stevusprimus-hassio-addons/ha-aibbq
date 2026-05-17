@@ -1,6 +1,5 @@
 {
   "name": "AiBBQ Life Thermometer",
   "render_readme": true,
-  "homeassistant": "2026.3.2",
-  "category": "integration"
+  "homeassistant": "2026.3.2"
 }
