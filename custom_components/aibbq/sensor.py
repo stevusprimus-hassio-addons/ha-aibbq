@@ -77,6 +77,7 @@ class AiBBQSensorEntity(CoordinatorEntity[AiBBQCoordinator], SensorEntity):
         description: AiBBQSensorDescription,
     ) -> None:
         super().__init__(coordinator)
+        assert entry.unique_id is not None
         self.entity_description = description
         self._attr_unique_id = f"{entry.unique_id}_{description.key}"
         self._attr_device_info = DeviceInfo(

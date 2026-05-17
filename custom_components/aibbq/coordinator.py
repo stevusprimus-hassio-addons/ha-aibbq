@@ -17,9 +17,10 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from bleak import BleakClient
+from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
@@ -60,12 +61,13 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
             name=DOMAIN,
             update_interval=None,   # push-only; we call async_set_updated_data()
         )
+        assert entry.unique_id is not None
         self._address: str = entry.unique_id  # BLE MAC / UUID
         self._entry = entry
         self._client: BleakClient | None = None
-        self._write_char = None          # stored after connect for later writes
+        self._write_char: BleakGATTCharacteristic | None = None
         self._connect_task: asyncio.Task | None = None
-        self._cancel_bluetooth_cb: callable | None = None
+        self._cancel_bluetooth_cb: Callable[[], None] | None = None
 
         # Shared state object mutated in-place by the parser
         self.data = AiBBQState()
@@ -162,8 +164,12 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
             # Device exposes two services with identical characteristic UUIDs;
             # scope to SERVICE_UUID_1 to get an unambiguous characteristic reference.
             service = client.services.get_service(SERVICE_UUID_1)
+            if service is None:
+                raise BleakError(f"Service {SERVICE_UUID_1} not found")
             notify_char = service.get_characteristic(CHAR_NOTIFY_UUID)
             write_char = service.get_characteristic(CHAR_WRITE_UUID)
+            if notify_char is None or write_char is None:
+                raise BleakError("Required GATT characteristics not found")
 
             await client.start_notify(notify_char, self._async_on_notification)
             await client.write_gatt_char(write_char, AUTH_CMD, response=False)
@@ -209,6 +215,10 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
     @property
     def rssi(self) -> float | None:
         return self._rssi
+
+    @property
+    def battery(self) -> int | None:
+        return None
 
     async def async_set_connect_enabled(self, enabled: bool) -> None:
         """Enable or disable BLE auto-connect and update HA state."""
@@ -337,16 +347,10 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
     # ── Notification handler ──────────────────────────────────────────────────
 
     @callback
-    def _async_on_notification(self, sender: int, raw: bytearray) -> None:
+    def _async_on_notification(self, sender: BleakGATTCharacteristic, raw: bytearray) -> None:
         """Decode incoming BLE frame(s) and push updated state to HA."""
         updated = process_notification(bytes(raw), self.data)
         if updated:
-            # Device stops advertising while connected, so refresh RSSI from HA's cache.
-            service_info = bluetooth.async_last_service_info(
-                self.hass, self._address, connectable=True
-            )
-            if service_info is not None:
-                self._rssi = service_info.rssi
             _LOGGER.debug(
                 "Notification: temp=%s °C target=%s",
                 f"{self.data.best_temp:.0f}" if self.data.best_temp is not None else "—",

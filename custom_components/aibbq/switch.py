@@ -68,6 +68,7 @@ class AiBBQSwitch(CoordinatorEntity[AiBBQCoordinator], SwitchEntity, RestoreEnti
         description: AiBBQSwitchDescription,
     ) -> None:
         super().__init__(coordinator)
+        assert entry.unique_id is not None
         self.entity_description = description
         self._attr_unique_id = f"{entry.unique_id}_{description.key}"
         self._attr_device_info = DeviceInfo(
@@ -107,6 +108,7 @@ class AiBBQConnectSwitch(CoordinatorEntity[AiBBQCoordinator], SwitchEntity, Rest
         entry: ConfigEntry,
     ) -> None:
         super().__init__(coordinator)
+        assert entry.unique_id is not None
         self._attr_unique_id = f"{entry.unique_id}_{SWITCH_CONNECT}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.unique_id)},
