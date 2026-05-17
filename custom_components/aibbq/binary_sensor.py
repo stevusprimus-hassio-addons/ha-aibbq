@@ -5,14 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorEntityDescription
+from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
+    BinarySensorEntity,
+    BinarySensorEntityDescription,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import BINARY_SENSOR_ALARM_LOW, BINARY_SENSOR_ALARM_HIGH, DOMAIN
+from .const import BINARY_SENSOR_ALARM_LOW, BINARY_SENSOR_ALARM_HIGH, BINARY_SENSOR_CONNECTED, DOMAIN
 from .coordinator import AiBBQCoordinator
 
 
@@ -33,6 +37,13 @@ BINARY_SENSORS: tuple[AiBBQBinarySensorDescription, ...] = (
         translation_key=BINARY_SENSOR_ALARM_HIGH,
         name="High Temperature Alarm",
         is_on_fn=lambda c: c.alarm_high_active,
+    ),
+    AiBBQBinarySensorDescription(
+        key=BINARY_SENSOR_CONNECTED,
+        translation_key=BINARY_SENSOR_CONNECTED,
+        name="Connected",
+        device_class=BinarySensorDeviceClass.CONNECTIVITY,
+        is_on_fn=lambda c: c.is_connected,
     ),
 )
 
@@ -61,6 +72,7 @@ class AiBBQAlarmSensor(CoordinatorEntity[AiBBQCoordinator], BinarySensorEntity):
         description: AiBBQBinarySensorDescription,
     ) -> None:
         super().__init__(coordinator)
+        assert entry.unique_id is not None
         self.entity_description = description
         self._attr_unique_id = f"{entry.unique_id}_{description.key}"
         self._attr_device_info = DeviceInfo(

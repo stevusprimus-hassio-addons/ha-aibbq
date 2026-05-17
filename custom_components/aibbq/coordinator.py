@@ -17,9 +17,10 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from bleak import BleakClient
+from bleak.backends.characteristic import BleakGATTCharacteristic
 from bleak.exc import BleakError
 from bleak_retry_connector import establish_connection
 
@@ -60,12 +61,13 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
             name=DOMAIN,
             update_interval=None,   # push-only; we call async_set_updated_data()
         )
+        assert entry.unique_id is not None
         self._address: str = entry.unique_id  # BLE MAC / UUID
         self._entry = entry
         self._client: BleakClient | None = None
-        self._write_char = None          # stored after connect for later writes
+        self._write_char: BleakGATTCharacteristic | None = None
         self._connect_task: asyncio.Task | None = None
-        self._cancel_bluetooth_cb: callable | None = None
+        self._cancel_bluetooth_cb: Callable[[], None] | None = None
 
         # Shared state object mutated in-place by the parser
         self.data = AiBBQState()
@@ -77,6 +79,10 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         self._high_alarm_enabled: bool = False
         self._low_alarm_triggered: bool = False
         self._high_alarm_triggered: bool = False
+
+        # Connection control
+        self._connect_enabled: bool = True
+        self._rssi: float | None = None
 
     # ── Setup / Teardown ─────────────────────────────────────────────────────
 
@@ -111,6 +117,8 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         change: BluetoothChange,
     ) -> None:
         """Called by HA every time the device advertises."""
+        self._rssi = service_info.rssi
+        self.async_set_updated_data(copy.copy(self.data))
         if change == BluetoothChange.ADVERTISEMENT and not self._is_connected:
             _LOGGER.debug("Advertisement from %s — scheduling connect", self._address)
             self._schedule_connect()
@@ -123,6 +131,8 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
 
     def _schedule_connect(self) -> None:
         """Schedule a connection attempt unless one is already running."""
+        if not self._connect_enabled:
+            return
         if self._connect_task and not self._connect_task.done():
             return
         self._connect_task = self.hass.async_create_task(
@@ -154,14 +164,20 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
             # Device exposes two services with identical characteristic UUIDs;
             # scope to SERVICE_UUID_1 to get an unambiguous characteristic reference.
             service = client.services.get_service(SERVICE_UUID_1)
+            if service is None:
+                raise BleakError(f"Service {SERVICE_UUID_1} not found")
             notify_char = service.get_characteristic(CHAR_NOTIFY_UUID)
             write_char = service.get_characteristic(CHAR_WRITE_UUID)
+            if notify_char is None or write_char is None:
+                raise BleakError("Required GATT characteristics not found")
 
             await client.start_notify(notify_char, self._async_on_notification)
             await client.write_gatt_char(write_char, AUTH_CMD, response=False)
             self._write_char = write_char   # keep for later writes (target temp, etc.)
 
             _LOGGER.info("Connected to AiBBQ %s", self._address)
+
+            self.async_set_updated_data(copy.copy(self.data))
 
         except (BleakError, asyncio.TimeoutError) as err:
             _LOGGER.warning("Failed to connect to %s: %s — retrying in %ds", self._address, err, _RECONNECT_DELAY)
@@ -175,6 +191,7 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         _LOGGER.warning("Disconnected from AiBBQ %s — will reconnect on next advertisement", self._address)
         self._client = None
         self._write_char = None
+        self.async_set_updated_data(copy.copy(self.data))
 
     async def _async_disconnect(self) -> None:
         """Disconnect cleanly if connected."""
@@ -184,6 +201,39 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
             except BleakError:
                 pass
         self._client = None
+
+    # ── Connection state ─────────────────────────────────────────────────────
+
+    @property
+    def connect_enabled(self) -> bool:
+        return self._connect_enabled
+
+    @property
+    def is_connected(self) -> bool:
+        return self._is_connected
+
+    @property
+    def rssi(self) -> float | None:
+        return self._rssi
+
+    @property
+    def battery(self) -> int | None:
+        return None
+
+    async def async_set_connect_enabled(self, enabled: bool) -> None:
+        """Enable or disable BLE auto-connect and update HA state."""
+        self._connect_enabled = enabled
+        if not enabled:
+            if self._connect_task and not self._connect_task.done():
+                self._connect_task.cancel()
+                try:
+                    await self._connect_task
+                except asyncio.CancelledError:
+                    pass
+            await self._async_disconnect()
+        else:
+            self._schedule_connect()
+        self.async_set_updated_data(copy.copy(self.data))
 
     # ── Temperature thresholds & alarms ──────────────────────────────────────
 
@@ -297,7 +347,7 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
     # ── Notification handler ──────────────────────────────────────────────────
 
     @callback
-    def _async_on_notification(self, sender: int, raw: bytearray) -> None:
+    def _async_on_notification(self, sender: BleakGATTCharacteristic, raw: bytearray) -> None:
         """Decode incoming BLE frame(s) and push updated state to HA."""
         updated = process_notification(bytes(raw), self.data)
         if updated:

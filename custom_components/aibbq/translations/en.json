@@ -21,5 +21,22 @@
       "already_configured": "This device is already configured.",
       "no_devices_found": "No AiBBQ devices were found nearby. Make sure the thermometer is powered on."
     }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Connected"
+      }
+    },
+    "switch": {
+      "connect": {
+        "name": "Connect"
+      }
+    },
+    "sensor": {
+      "rssi": {
+        "name": "Signal Strength"
+      }
+    }
   }
 }

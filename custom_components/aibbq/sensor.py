@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Callable
 
@@ -13,23 +12,20 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import SIGNAL_STRENGTH_DECIBELS_MILLIWATT, UnitOfTemperature
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, SENSOR_TEMP_CURRENT
+from .const import DOMAIN, SENSOR_RSSI, SENSOR_TEMP_CURRENT
 from .coordinator import AiBBQCoordinator
-from .parser import AiBBQState
-
-_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, kw_only=True)
 class AiBBQSensorDescription(SensorEntityDescription):
     """Extends SensorEntityDescription with a value accessor."""
-    value_fn: Callable[[AiBBQState], float | None]
+    value_fn: Callable[[AiBBQCoordinator], float | None]
 
 
 SENSORS: tuple[AiBBQSensorDescription, ...] = (
@@ -40,7 +36,17 @@ SENSORS: tuple[AiBBQSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         suggested_display_precision=0,
-        value_fn=lambda s: s.best_temp,
+        value_fn=lambda c: c.data.best_temp,
+    ),
+    AiBBQSensorDescription(
+        key=SENSOR_RSSI,
+        translation_key=SENSOR_RSSI,
+        name="Signal Strength",
+        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
+        entity_registry_enabled_default=False,
+        value_fn=lambda c: c.rssi,
     ),
 )
 
@@ -71,6 +77,7 @@ class AiBBQSensorEntity(CoordinatorEntity[AiBBQCoordinator], SensorEntity):
         description: AiBBQSensorDescription,
     ) -> None:
         super().__init__(coordinator)
+        assert entry.unique_id is not None
         self.entity_description = description
         self._attr_unique_id = f"{entry.unique_id}_{description.key}"
         self._attr_device_info = DeviceInfo(
@@ -82,10 +89,7 @@ class AiBBQSensorEntity(CoordinatorEntity[AiBBQCoordinator], SensorEntity):
 
     @property
     def native_value(self) -> float | None:
-        """Return the current sensor value."""
-        if self.coordinator.data is None:
-            return None
-        return self.entity_description.value_fn(self.coordinator.data)
+        return self.entity_description.value_fn(self.coordinator)
 
     @callback
     def _handle_coordinator_update(self) -> None:

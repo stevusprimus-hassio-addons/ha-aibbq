@@ -160,6 +160,7 @@ PRs welcome. Especially useful:
 - Multi-probe support (up to 4 probes suspected from protocol analysis)
 - Battery level sensor
 - Reverse-engineering the write command for the device-side alarm setpoint
+- Translations (besides EN/DE)
 
 ---
 
