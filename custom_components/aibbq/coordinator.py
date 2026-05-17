@@ -214,6 +214,10 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         if not enabled:
             if self._connect_task and not self._connect_task.done():
                 self._connect_task.cancel()
+                try:
+                    await self._connect_task
+                except asyncio.CancelledError:
+                    pass
             await self._async_disconnect()
         else:
             self._schedule_connect()
