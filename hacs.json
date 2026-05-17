@@ -1,7 +1,7 @@
 {
   "name": "AiBBQ Life Thermometer",
   "description": "Home Assistant integration for the AiBBQ Life BLE BBQ thermometer probe. Auto-discovers the device via Bluetooth and exposes probe temperature and alarm setpoint as sensors.",
-  "render_readme": false,
+  "render_readme": true,
   "homeassistant": "2026.3.2",
   "iot_class": "local_push",
   "category": "integration"
