@@ -78,6 +78,11 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
         self._low_alarm_triggered: bool = False
         self._high_alarm_triggered: bool = False
 
+        # Connection control
+        self._connect_enabled: bool = True
+        self._rssi: float | None = None
+        self._battery: int | None = None
+
     # ── Setup / Teardown ─────────────────────────────────────────────────────
 
     async def async_setup(self) -> None:
@@ -184,6 +189,35 @@ class AiBBQCoordinator(DataUpdateCoordinator[AiBBQState]):
             except BleakError:
                 pass
         self._client = None
+
+    # ── Connection state ─────────────────────────────────────────────────────
+
+    @property
+    def connect_enabled(self) -> bool:
+        return self._connect_enabled
+
+    @property
+    def is_connected(self) -> bool:
+        return self._is_connected
+
+    @property
+    def rssi(self) -> float | None:
+        return self._rssi
+
+    @property
+    def battery(self) -> int | None:
+        return self._battery
+
+    async def async_set_connect_enabled(self, enabled: bool) -> None:
+        """Enable or disable BLE auto-connect and update HA state."""
+        self._connect_enabled = enabled
+        if not enabled:
+            if self._connect_task and not self._connect_task.done():
+                self._connect_task.cancel()
+            await self._async_disconnect()
+        else:
+            self._schedule_connect()
+        self.async_set_updated_data(copy.copy(self.data))
 
     # ── Temperature thresholds & alarms ──────────────────────────────────────
 
